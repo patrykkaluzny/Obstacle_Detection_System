@@ -1,0 +1,311 @@
+#include "vl53l0_functions.h"
+#include "i2c.h"
+#include "stm32l4xx_hal.h"
+#include "vl53l0x_api.h"
+#include "structures.h"
+#include "flash.h"
+
+volatile VL53L0X_RangingMeasurementData_t VL53L0_RangingData;
+VL53L0X_RangingMeasurementData_t* pRangingMeasurementData;
+uint32_t * pInterruptMaskStatus;
+VL53L0X_Dev_t vl53l0_0;
+VL53L0X_DEV vl53l0_dev = &vl53l0_0;
+<<<<<<< HEAD
+struct VL53L0_InitData initData;
+float calibratedTemeperature= {0,0,0,0,0,0,0,0};
+=======
+struct VL53L0_InitData initData={0,0,0,0,0,0,0,0};
+float calibratedTemeperature ;
+
+extern volatile float 								currentTemperatureValue;
+extern volatile uint8_t								isTemparatureReadOK; // 1 - temparature read works, 0 - error during temparature reading
+>>>>>>> origin/marge_branch
+
+
+VL53L0X_Error VL53L0_InitManufacturingCalibration(void) {
+
+	// InitManufacturingCalibration MUST be call at a positive ambient temperature
+
+	VL53L0X_Error status = VL53L0X_ERROR_NONE;
+
+	//turn on sensor
+	HAL_GPIO_WritePin(GPIOA, XSHUT_Pin, GPIO_PIN_SET);
+
+	//complete sensor structure
+	vl53l0_dev->I2cDevAddr = VL53L0_ADRESS;
+	vl53l0_dev->comms_speed_khz = I2C_TRAN_HZ; //should be 400kHz !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	vl53l0_dev->I2cHandle = &hi2c1;
+	vl53l0_dev->comms_type = VL53L0X_COMMS_I2C;
+
+	//WaitDeviceBooted
+	HAL_Delay(1000);
+
+	//init device
+	status = VL53L0X_DataInit(vl53l0_dev);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+
+	status = VL53L0X_StaticInit(vl53l0_dev);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+
+	//  initial customer manufacturing calibration
+
+	float initTemp; // should be stored in device after ReadTemperaure.
+
+	initTemp = ReadTemperaure();
+
+	uint32_t  refSpadCount ;   // should be stored in device after PerformRefSpadManagement.
+	uint8_t  isApertureSpads ; // should be stored in device after PerformRefSpadManagement.
+
+	status = VL53L0X_PerformRefSpadManagement(vl53l0_dev,&refSpadCount,&isApertureSpads);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+
+	uint8_t  vhvSettings;   // should be stored in device after PerformRefCalibration.
+	uint8_t  phaseCal;	  // should be stored in device after PerformRefCalibration.
+
+	status = VL53L0X_PerformRefCalibration(vl53l0_dev, &vhvSettings, &phaseCal);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+
+	/*  OFFSET CALIBRATION
+	 * Recommendation is to use a white (88%reflectance) target at 100mm, in a dark
+	 * environment. Target distance can be changed depending on customer’s constraints,
+	 * but it has to be chosen in the linear part of the ranging curve.
+	 */
+	FixPoint1616_t CalDistanceMilliMeter = 170.0;
+	int32_t  offsetMicroMeter;   //should be stored in device after OffsetCalibration
+
+	status  = VL53L0X_PerformOffsetCalibration(vl53l0_dev, CalDistanceMilliMeter, &offsetMicroMeter);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+
+	//XTALK CALIBRATION
+	FixPoint1616_t XTalkCalDistance; //distance to be determined
+<<<<<<< HEAD
+	FixPoint1616_t  xTalkCompensationRateMegaCps;
+=======
+	FixPoint1616_t  xTalkCompensationRateMegaCps = 1; // value for test
+>>>>>>> origin/marge_branch
+	// status = VL53L0X_PerformXTalkCalibration (vl53l0_dev,  XTalkCalDistance, &xTalkCompensationRateMegaCps);
+	//  TODO
+
+	// STORE VALUES IN DEVICE MEMORY
+
+	initData.refSpadCount =refSpadCount;
+	initData.isApertureSpads = isApertureSpads;
+	initData.vhvSettings = vhvSettings;
+	initData.phaseCal = phaseCal;
+	initData.offsetMicroMeter = offsetMicroMeter;
+	initData.xTalkCompensationRateMegaCps = xTalkCompensationRateMegaCps;
+	initData.initTemp = initTemp;
+	initData.isManufacturingInitDone=1;
+
+<<<<<<< HEAD
+=======
+	SaveInitDataVL53Lx();
+
+	initData.refSpadCount =1;
+	initData.isApertureSpads = 1;
+	initData.vhvSettings = 1;
+	initData.phaseCal = 1;
+	initData.offsetMicroMeter = 1;
+	initData.xTalkCompensationRateMegaCps = 1;
+	initData.initTemp = 1;
+	initData.isManufacturingInitDone=1;
+
+	ReadInitDataVL53Lx();
+
+>>>>>>> origin/marge_branch
+	// store  initData
+
+	return status;
+}
+
+VL53L0X_Error VL53L0_Init(void) {
+
+	VL53L0X_Error status = VL53L0X_ERROR_NONE;
+
+	calibratedTemeperature = initData.initTemp;
+
+	//init device
+	status = VL53L0X_DataInit(vl53l0_dev);
+
+	status = VL53L0X_StaticInit(vl53l0_dev);
+
+	status = VL53L0X_SetReferenceSpads (vl53l0_dev, initData.refSpadCount,initData.isApertureSpads);
+
+	if(VL53L0_IsTemperateureRecalibrationRequired())
+	{
+		uint8_t  vhvSettings;
+		uint8_t  phaseCal;
+		calibratedTemeperature = ReadTemperaure();
+
+		status = VL53L0X_PerformRefCalibration(vl53l0_dev, &vhvSettings, &phaseCal);
+		if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+
+		status = VL53L0X_SetRefCalibration (vl53l0_dev, vhvSettings, phaseCal);
+		if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+
+	}
+	else
+	{
+		status = VL53L0X_SetRefCalibration (vl53l0_dev, initData.vhvSettings, initData.phaseCal);
+		if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+	}
+
+	status = VL53L0X_SetOffsetCalibrationDataMicroMeter (vl53l0_dev, initData.offsetMicroMeter);
+
+	//status = VL53L0_SetupContinousRanging();
+
+	return status ;
+
+
+}
+
+VL53L0X_Error VL53L0_SetupSingleShot(void) {
+	VL53L0X_Error status;
+	uint8_t VhvSettings;
+	uint8_t PhaseCal;
+	uint32_t refSpadCount;
+	uint8_t isApertureSpads;
+	//offset calibration variables
+	FixPoint1616_t fixPoint=0;
+	int32_t OffsetMicroMetr=0;
+	//xtalk calibration variables
+	FixPoint1616_t xTalkDistance=0;
+	FixPoint1616_t xTalkCompenastion=0;
+
+	status = VL53L0X_StaticInit(vl53l0_dev);
+	if (status) {
+		//error
+	}
+
+
+	status = VL53L0X_PerformRefSpadManagement(vl53l0_dev, &refSpadCount,&isApertureSpads);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+	status = VL53L0X_PerformRefCalibration(vl53l0_dev, &VhvSettings,&PhaseCal);
+	if (status!=0) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+	//status=VL53L0X_PerformOffsetCalibration(vl53l0_dev,fixPoint,&OffsetMicroMetr);
+	//if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+	//status = VL53L0X_PerformXTalkCalibration(vl53l0_dev,xTalkDistance,&xTalkCompenastion);
+
+	VL53L0X_DeviceError error;
+
+
+
+
+
+
+	status = VL53L0X_SetDeviceMode(vl53l0_dev,VL53L0X_DEVICEMODE_SINGLE_RANGING); // Setup in single ranging mode
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+	status = VL53L0X_SetMeasurementTimingBudgetMicroSeconds(vl53l0_dev,20 * 1000);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+	status = VL53L0X_StartMeasurement(vl53l0_dev);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+	status=VL53L0X_GetDeviceErrorStatus(vl53l0_dev,&error);
+	return status;
+}
+
+VL53L0X_Error VL5F3L0_IsSensorFound()
+{
+	uint16_t Id;
+	VL53L0X_Error status;
+	status = VL53L0X_RdWord(vl53l0_dev, VL53L0X_REG_IDENTIFICATION_MODEL_ID, &Id);
+	if (status) {
+	  return VL53L0X_ERROR_UNDEFINED;
+	}
+	if (Id == 0xEEAA) {
+		return VL53L0X_ERROR_NONE;
+	}
+	else
+	{
+		return VL53L0X_ERROR_NOT_IMPLEMENTED;
+	}
+}
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	VL53L0X_Error status = VL53L0X_ERROR_NONE;
+
+  if(GPIO_Pin==GPIO_PIN_5)
+  {
+	  //HAL_Delay(1000);
+	  HAL_GPIO_TogglePin(GPIOB,INFO1_Pin);
+	  //HAL_Delay(1000);
+	 //status = VL53L0X_GetRangingMeasurementData(vl53l0_dev,pRangingMeasurementData);
+	//status = VL53L0X_GetInterruptMaskStatus (vl53l0_dev,pInterruptMaskStatus );
+	 //status = VL53L0X_ClearInterruptMask(vl53l0_dev,pInterruptMaskStatus);
+  }
+
+
+}
+
+VL53L0X_Error VL53L0_SetupContinousRanging(void)
+{
+	//SET DEVICE MODE , SET_GPIO
+	VL53L0X_Error status = VL53L0X_ERROR_NONE;
+	//status = VL53L0X_SetDeviceMode(vl53l0_dev, VL53L0X_DEVICEMODE_CONTINUOUS_RANGING);
+
+
+	//status =  VL53L0X_SetGpioConfig (vl53l0_dev, GPIO_PIN_5, VL53L0X_DEVICEMODE_CONTINUOUS_RANGING, VL53L0X_GPIOFUNCTIONALITY_NEW_MEASURE_READY, VL53L0X_INTERRUPTPOLARITY_HIGH);
+    // TODO
+	/*
+	VL53L0X_DeviceError error;
+	status = VL53L0X_SetMeasurementTimingBudgetMicroSeconds(vl53l0_dev,20 * 1000);
+		if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+		status = VL53L0X_StartMeasurement(vl53l0_dev);
+		if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+		status=VL53L0X_GetDeviceErrorStatus(vl53l0_dev,&error);
+	*/
+	VL53L0X_DeviceError *error;
+	//status = VL53L0X_StartMeasurement(vl53l0_dev);
+	//status = VL53L0X_StartMeasurement(vl53l0_dev);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+
+	status=VL53L0X_GetDeviceErrorStatus(vl53l0_dev,error);
+	return status ;
+}
+
+VL53L0X_Error VL53L0_TemperateureRecalibration(void)
+{
+	//This function should be called every 8 deg temperature diff
+	VL53L0X_Error status = VL53L0X_ERROR_NONE;
+	uint8_t  vhvSettings;
+	uint8_t  phaseCal;
+	calibratedTemeperature = ReadTemperaure();
+	// need global variable to store temperature for which function was called
+
+
+	status = VL53L0X_PerformRefCalibration(vl53l0_dev, &vhvSettings, &phaseCal);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+	status = VL53L0X_SetRefCalibration(vl53l0_dev, vhvSettings, phaseCal);
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+
+	return status ;
+}
+
+uint8_t VL53L0_IsTemperateureRecalibrationRequired(void)
+{
+	if((initData.initTemp - calibratedTemeperature)>8)
+		return 1;
+	else
+		return 0;
+
+}
+
+
+VL53L0X_Error test(void)
+{
+	VL53L0X_Error status = VL53L0X_ERROR_NONE;
+	VL53L0X_RangingMeasurementData_t testv;
+	status = VL53L0X_PerformSingleRangingMeasurement(vl53l0_dev, &testv);
+
+	if (status) {HAL_GPIO_WritePin(ERROR_GPIO_Port,ERROR_Pin,SET);}
+	if(testv.RangeMilliMeter>500)
+		HAL_GPIO_TogglePin(GPIOB,INFO2_Pin);
+	return status;
+
+}
+
+
+<<<<<<< HEAD
+
+=======
+>>>>>>> origin/marge_branch
