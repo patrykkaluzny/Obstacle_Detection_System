@@ -12,5 +12,5 @@ This repository contests source code for three embedded modules designed for the
 
 This project was created by:
 * https://github.com/patrykkaluzny
-*
+* https://github.com/Bielan
 
