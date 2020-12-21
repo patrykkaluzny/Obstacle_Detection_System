@@ -8,6 +8,8 @@ This repository contests source code for three embedded modules designed for the
 * ODSsensor - the module that collects data from miniature distance sensors VL53L0
 * ODSlidar - the module that collects data from long-range distance sensor LIDAR-Lite V3
 
+Engineering Thesis created based on this project -> drive.google.com/file/d/1Mo3oAwUfDJ8oDjY8IU8WTBJmLa4PVFsd/view?usp=sharing
+
 ## Contribution
 
 This project was created by:
